@@ -1,4 +1,4 @@
-import { AudioEffectMode, GestureType } from "@/lib/types";
+import { AudioEffectMode, GestureType, InferenceProvider } from "@/lib/types";
 
 export const GESTURE_TO_EFFECT: Record<GestureType, AudioEffectMode> = {
   none: "idle",
@@ -14,4 +14,10 @@ export const EFFECT_DESCRIPTIONS: Record<AudioEffectMode, string> = {
   autotune: "Pitch correction response changes with fist tilt.",
   talkbox: "Formant-style synth filter for speech-like resonance.",
   recording: "Capturing the live processed microphone stream."
+};
+
+export const PROVIDER_LABELS: Record<InferenceProvider, string> = {
+  browser: "Browser landmarks",
+  "python-fallback": "Python unavailable",
+  "python-live": "Python motion model"
 };

@@ -1,8 +1,11 @@
-import { GestureSnapshot, GestureType } from "@/lib/types";
+import { GestureSnapshot, GestureType, MovementDirection } from "@/lib/types";
 
-type Landmark = { x: number; y: number; z: number };
+export type Landmark = { x: number; y: number; z: number };
 
-const tipIds = [4, 8, 12, 16, 20];
+export interface LandmarkFrame {
+  timestamp: number;
+  landmarks: Landmark[];
+}
 
 function fingerExtended(landmarks: Landmark[], tip: number, pip: number) {
   return landmarks[tip].y < landmarks[pip].y;
@@ -16,13 +19,53 @@ function estimateTilt(landmarks: Landmark[]) {
   return Number(((landmarks[5].x + landmarks[17].x) / 2 - landmarks[0].x).toFixed(3));
 }
 
-export function classifyGesture(landmarks: Landmark[] | undefined): GestureSnapshot {
-  if (!landmarks || landmarks.length < tipIds[tipIds.length - 1] + 1) {
+function estimateMovement(history: LandmarkFrame[]): MovementDirection {
+  if (history.length < 2) {
+    return "still";
+  }
+
+  const first = history[0]?.landmarks[0];
+  const last = history[history.length - 1]?.landmarks[0];
+
+  if (!first || !last) {
+    return "still";
+  }
+
+  const deltaX = last.x - first.x;
+  const deltaY = last.y - first.y;
+
+  if (Math.abs(deltaX) < 0.03 && Math.abs(deltaY) < 0.03) {
+    return "still";
+  }
+
+  if (Math.abs(deltaX) > Math.abs(deltaY)) {
+    return deltaX > 0 ? "right" : "left";
+  }
+
+  return deltaY > 0 ? "down" : "up";
+}
+
+function estimatePosition(landmarks: Landmark[]) {
+  const wrist = landmarks[0];
+  const horizontal = wrist.x < 0.38 ? "left" : wrist.x > 0.62 ? "right" : "center";
+  const vertical = wrist.y < 0.33 ? "high" : wrist.y > 0.68 ? "low" : "mid";
+
+  return { horizontal, vertical } as const;
+}
+
+export function analyzeLocalGesture(landmarks: Landmark[] | undefined, history: LandmarkFrame[]): GestureSnapshot {
+  if (!landmarks || landmarks.length < 21) {
     return {
       gesture: "none",
       confidence: 0,
       tilt: 0,
-      label: "No hand detected"
+      label: "No hand detected",
+      movement: "still",
+      position: {
+        horizontal: "center",
+        vertical: "mid"
+      },
+      source: "browser"
     };
   }
 
@@ -64,6 +107,9 @@ export function classifyGesture(landmarks: Landmark[] | undefined): GestureSnaps
     gesture,
     confidence,
     tilt,
-    label
+    label,
+    movement: estimateMovement(history),
+    position: estimatePosition(landmarks),
+    source: "browser"
   };
 }

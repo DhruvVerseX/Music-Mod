@@ -1,13 +1,21 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRef } from "react";
 import { motion } from "framer-motion";
-import { CameraStage } from "@/components/dashboard/camera-stage";
+import { ControlPanel } from "@/components/dashboard/control-panel";
 import { EffectPanel } from "@/components/dashboard/effect-panel";
 import { LiveStats } from "@/components/dashboard/live-stats";
 import { GestureLegend } from "@/components/dashboard/gesture-legend";
 import { useAudioEngine } from "@/hooks/use-audio-engine";
 import { useGestureTracking } from "@/hooks/use-gesture-tracking";
+
+const CameraStage = dynamic(
+  () => import("@/components/dashboard/camera-stage").then((mod) => mod.CameraStage),
+  {
+    ssr: false
+  }
+);
 
 export function DashboardShell() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -38,6 +46,8 @@ export function DashboardShell() {
           </div>
           <EffectPanel compact />
         </motion.header>
+
+        <ControlPanel />
 
         <section className="grid flex-1 gap-6 lg:grid-cols-[1.4fr_0.95fr]">
           <CameraStage videoRef={videoRef} canvasRef={canvasRef} />

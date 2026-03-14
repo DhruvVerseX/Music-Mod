@@ -2,7 +2,8 @@
 
 import * as Tone from "tone";
 import Meyda from "meyda";
-import type { MeydaAnalyzer, MeydaFeaturesObject } from "meyda/dist/esm/meyda-wa";
+import type { MeydaFeaturesObject } from "meyda";
+import type { MeydaAnalyzer } from "meyda/dist/esm/meyda-wa";
 import { AudioEffectMode, GestureSnapshot } from "@/lib/types";
 
 interface AudioEngineCallbacks {
@@ -125,9 +126,13 @@ export class AudioEngine {
         bufferSize: 512,
         featureExtractors: ["rms", "spectralCentroid"],
         callback: (features: Partial<MeydaFeaturesObject>) => {
+          const rawCentroid = features.spectralCentroid ?? 0;
+          // Meyda returns a bin index that can be astronomically large on silence/clipping.
+          // Clamp to a safe maximum (24 kHz) before converting to display units.
+          const safeCentroid = isFinite(rawCentroid) ? Math.min(rawCentroid, 24000) : 0;
           this.callbacks.onMetrics({
             inputLevel: Number(features.rms?.toFixed(3) ?? 0),
-            spectralCentroid: Number(((features.spectralCentroid ?? 0) / 1000).toFixed(2)),
+            spectralCentroid: Number((safeCentroid / 1000).toFixed(2)),
             pitch: 0
           });
         }

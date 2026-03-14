@@ -1,18 +1,34 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { PROVIDER_LABELS } from "@/lib/constants";
 import { useAppStore } from "@/store/use-app-store";
 
 export function LiveStats() {
-  const { cameraReady, micReady, gesture, audioMetrics, permissionError, isRecording } = useAppStore();
+  const {
+    cameraReady,
+    micReady,
+    cameraPermission,
+    micPermission,
+    gesture,
+    audioMetrics,
+    cameraError,
+    audioError,
+    pythonError,
+    pythonProvider,
+    isRecording
+  } = useAppStore();
 
   const stats = [
-    { label: "Camera", value: cameraReady ? "Live" : "Waiting" },
-    { label: "Mic", value: micReady ? "Live" : "Waiting" },
+    { label: "Camera", value: cameraReady ? "Live" : cameraPermission },
+    { label: "Mic", value: micReady ? "Live" : micPermission },
     { label: "Tilt", value: `${gesture.tilt > 0 ? "+" : ""}${gesture.tilt.toFixed(2)}` },
     { label: "Input", value: `${Math.round(audioMetrics.inputLevel * 100)}%` },
     { label: "Spectral", value: `${audioMetrics.spectralCentroid.toFixed(2)}kHz` },
-    { label: "Record", value: isRecording ? "Active" : "Standby" }
+    { label: "Record", value: isRecording ? "Active" : "Standby" },
+    { label: "Move", value: gesture.movement },
+    { label: "Zone", value: `${gesture.position.horizontal}-${gesture.position.vertical}` },
+    { label: "AI", value: PROVIDER_LABELS[pythonProvider] }
   ];
 
   return (
@@ -41,11 +57,11 @@ export function LiveStats() {
         ))}
       </div>
 
-      {permissionError ? (
-        <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
-          {permissionError}
+      {[cameraError, audioError, pythonError].filter(Boolean).map((message) => (
+        <div key={message} className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
+          {message}
         </div>
-      ) : null}
+      ))}
     </motion.section>
   );
 }

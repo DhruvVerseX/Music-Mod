@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { EFFECT_DESCRIPTIONS } from "@/lib/constants";
+import { EFFECT_DESCRIPTIONS, PROVIDER_LABELS } from "@/lib/constants";
 import { useAppStore } from "@/store/use-app-store";
 
 interface Props {
@@ -9,7 +9,7 @@ interface Props {
 }
 
 export function EffectPanel({ compact = false }: Props) {
-  const { audioEffect, gesture, isRecording, audioStatus } = useAppStore();
+  const { audioEffect, gesture, isRecording, audioStatus, pythonProvider, sessionStatus } = useAppStore();
 
   return (
     <div className={`panel ${compact ? "p-4 lg:max-w-sm" : "hidden p-5 lg:block"}`}>
@@ -32,6 +32,9 @@ export function EffectPanel({ compact = false }: Props) {
         <StatusCard label="Gesture" value={gesture.gesture} />
         <StatusCard label="Confidence" value={`${Math.round(gesture.confidence * 100)}%`} />
         <StatusCard label="Engine" value={audioStatus} />
+        <StatusCard label="Session" value={sessionStatus} />
+        <StatusCard label="Motion" value={gesture.movement} />
+        <StatusCard label="Provider" value={PROVIDER_LABELS[pythonProvider]} />
       </div>
     </div>
   );

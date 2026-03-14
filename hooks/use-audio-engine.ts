@@ -7,24 +7,40 @@ import { useAppStore } from "@/store/use-app-store";
 export function useAudioEngine() {
   const engineRef = useRef<AudioEngine | null>(null);
   const {
+    systemArmed,
     gesture,
     audioEffect,
     setAudioStatus,
     setMicReady,
-    setPermissionError,
+    setMicPermission,
+    setAudioError,
     setRecording,
-    setAudioMetrics
+    setAudioMetrics,
+    setSessionStatus
   } = useAppStore();
 
   useEffect(() => {
+    if (!systemArmed) {
+      engineRef.current?.dispose();
+      engineRef.current = null;
+      setAudioStatus("idle");
+      setMicReady(false);
+      return;
+    }
+
     const engine = new AudioEngine({
       onStatus: (status) => {
         setAudioStatus(status);
         setMicReady(status === "ready");
+        setMicPermission(status === "error" ? "denied" : status === "ready" ? "granted" : "pending");
+        if (status === "ready") {
+          setAudioError(undefined);
+          setSessionStatus("live");
+        }
       },
       onMetrics: setAudioMetrics,
       onRecording: setRecording,
-      onPermissionError: setPermissionError
+      onPermissionError: setAudioError
     });
 
     engineRef.current = engine;
@@ -34,7 +50,16 @@ export function useAudioEngine() {
       engine.dispose();
       engineRef.current = null;
     };
-  }, [setAudioMetrics, setAudioStatus, setMicReady, setPermissionError, setRecording]);
+  }, [
+    setAudioError,
+    setAudioMetrics,
+    setAudioStatus,
+    setMicPermission,
+    setMicReady,
+    setRecording,
+    setSessionStatus,
+    systemArmed
+  ]);
 
   useEffect(() => {
     engineRef.current?.updateFromGesture(gesture, audioEffect);
