@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Hands, Results } from "@mediapipe/hands";
+import { HAND_CONNECTIONS, Hands, Results } from "@mediapipe/hands";
 import { Camera } from "@mediapipe/camera_utils";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 import { classifyGesture } from "@/lib/gesture/gesture-classifier";
@@ -47,7 +47,7 @@ export function useGestureTracking({ videoRef, canvasRef }: Options) {
 
       const landmarks = results.multiHandLandmarks?.[0];
       if (landmarks) {
-        drawConnectors(context, landmarks, Hands.HAND_CONNECTIONS, {
+        drawConnectors(context, landmarks, HAND_CONNECTIONS, {
           color: "#7dd3fc",
           lineWidth: 3
         });

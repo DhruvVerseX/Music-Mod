@@ -2,6 +2,7 @@
 
 import * as Tone from "tone";
 import Meyda from "meyda";
+import type { MeydaAnalyzer, MeydaFeaturesObject } from "meyda/dist/esm/meyda-wa";
 import { AudioEffectMode, GestureSnapshot } from "@/lib/types";
 
 interface AudioEngineCallbacks {
@@ -16,18 +17,21 @@ export class AudioEngine {
   private inputStream?: MediaStream;
   private source?: MediaStreamAudioSourceNode;
   private inputGain?: GainNode;
-  private dryGain?: GainNode;
+  private pitchNode?: DelayNode;
+  private vocoderFilter?: BiquadFilterNode;
+  private talkboxFilter?: BiquadFilterNode;
+  private convolver?: ConvolverNode;
+  private delay?: DelayNode;
+  private feedbackGain?: GainNode;
+  private effectMix?: GainNode;
   private outputGain?: GainNode;
   private analyser?: AnalyserNode;
   private workletNode?: AudioWorkletNode;
-  private reverb?: Tone.Reverb;
-  private feedbackDelay?: Tone.FeedbackDelay;
-  private pitchShift?: Tone.PitchShift;
-  private autoFilter?: Tone.AutoFilter;
+  private modulationLfo?: Tone.LFO;
   private destination?: MediaStreamAudioDestinationNode;
   private mediaRecorder?: MediaRecorder;
   private recorderChunks: Blob[] = [];
-  private meydaAnalyzer?: Meyda.MeydaAnalyzer;
+  private meydaAnalyzer?: MeydaAnalyzer;
 
   constructor(private callbacks: AudioEngineCallbacks) {}
 
@@ -52,47 +56,55 @@ export class AudioEngine {
 
       this.source = this.context.createMediaStreamSource(stream);
       this.inputGain = this.context.createGain();
-      this.dryGain = this.context.createGain();
+      this.pitchNode = this.context.createDelay(0.05);
+      this.vocoderFilter = this.context.createBiquadFilter();
+      this.talkboxFilter = this.context.createBiquadFilter();
+      this.convolver = this.context.createConvolver();
+      this.delay = this.context.createDelay(0.4);
+      this.feedbackGain = this.context.createGain();
+      this.effectMix = this.context.createGain();
       this.outputGain = this.context.createGain();
       this.analyser = this.context.createAnalyser();
       this.workletNode = new AudioWorkletNode(this.context, "vocal-processor");
       this.destination = this.context.createMediaStreamDestination();
 
       this.inputGain.gain.value = 1;
+      this.pitchNode.delayTime.value = 0.012;
+      this.vocoderFilter.type = "bandpass";
+      this.vocoderFilter.frequency.value = 1100;
+      this.vocoderFilter.Q.value = 2.8;
+      this.talkboxFilter.type = "bandpass";
+      this.talkboxFilter.frequency.value = 1450;
+      this.talkboxFilter.Q.value = 8;
+      this.delay.delayTime.value = 0.16;
+      this.feedbackGain.gain.value = 0.24;
+      this.effectMix.gain.value = 0.18;
       this.outputGain.gain.value = 0.8;
       this.analyser.fftSize = 1024;
+      this.convolver.buffer = this.createImpulseResponse(this.context, 1.8);
 
-      this.reverb = new Tone.Reverb({
-        decay: 1.8,
-        wet: 0.18
-      }).toDestination();
-      this.feedbackDelay = new Tone.FeedbackDelay({
-        delayTime: 0.12,
-        feedback: 0.24,
-        wet: 0.1
-      }).connect(this.reverb);
-      this.pitchShift = new Tone.PitchShift({
-        pitch: 0,
-        wet: 0.3
-      }).connect(this.feedbackDelay);
-      this.autoFilter = new Tone.AutoFilter({
-        frequency: 0.4,
-        depth: 0.7,
-        wet: 0.15
-      }).connect(this.pitchShift);
-      this.autoFilter.start();
-
-      const toneInput = new Tone.UserMedia();
-      // Reuse the already opened media stream instead of prompting again.
-      (toneInput as unknown as { _stream: MediaStream })._stream = stream;
-      (toneInput as unknown as { _mediaStreamSource: MediaStreamAudioSourceNode })._mediaStreamSource = this.source;
-      toneInput.connect(this.autoFilter);
+      this.modulationLfo = new Tone.LFO({
+        frequency: 0.35,
+        min: 900,
+        max: 1900
+      }).start();
+      this.modulationLfo.connect(Tone.getDestination().volume);
 
       this.source.connect(this.inputGain);
       this.inputGain.connect(this.workletNode);
-      this.workletNode.connect(this.dryGain);
-      this.dryGain.connect(this.analyser);
-      this.analyser.connect(this.outputGain);
+
+      this.workletNode.connect(this.outputGain);
+      this.workletNode.connect(this.pitchNode);
+      this.pitchNode.connect(this.vocoderFilter);
+      this.vocoderFilter.connect(this.talkboxFilter);
+      this.talkboxFilter.connect(this.delay);
+      this.delay.connect(this.feedbackGain);
+      this.feedbackGain.connect(this.delay);
+      this.talkboxFilter.connect(this.convolver);
+      this.delay.connect(this.effectMix);
+      this.convolver.connect(this.effectMix);
+      this.effectMix.connect(this.outputGain);
+      this.outputGain.connect(this.analyser);
       this.outputGain.connect(this.context.destination);
       this.outputGain.connect(this.destination);
 
@@ -112,7 +124,7 @@ export class AudioEngine {
         source: this.source,
         bufferSize: 512,
         featureExtractors: ["rms", "spectralCentroid"],
-        callback: (features) => {
+        callback: (features: Partial<MeydaFeaturesObject>) => {
           this.callbacks.onMetrics({
             inputLevel: Number(features.rms?.toFixed(3) ?? 0),
             spectralCentroid: Number(((features.spectralCentroid ?? 0) / 1000).toFixed(2)),
@@ -130,7 +142,7 @@ export class AudioEngine {
   }
 
   updateFromGesture(snapshot: GestureSnapshot, mode: AudioEffectMode) {
-    if (!this.pitchShift || !this.autoFilter || !this.feedbackDelay || !this.reverb) {
+    if (!this.pitchNode || !this.vocoderFilter || !this.talkboxFilter || !this.delay || !this.effectMix) {
       return;
     }
 
@@ -138,35 +150,46 @@ export class AudioEngine {
 
     switch (mode) {
       case "vocoder":
-        this.pitchShift.pitch = normalizedTilt * 7;
-        this.autoFilter.wet.value = 0.45;
-        this.feedbackDelay.wet.value = 0.18;
-        this.reverb.wet.value = 0.22;
+        this.pitchNode.delayTime.value = 0.008 + Math.abs(normalizedTilt) * 0.012;
+        this.vocoderFilter.frequency.value = 900 + (normalizedTilt + 1) * 550;
+        this.vocoderFilter.Q.value = 4.5;
+        this.talkboxFilter.frequency.value = 1300;
+        this.delay.delayTime.value = 0.12;
+        this.effectMix.gain.value = 0.45;
         break;
       case "autotune":
-        this.pitchShift.pitch = Math.round(normalizedTilt * 4);
-        this.autoFilter.wet.value = 0.14;
-        this.feedbackDelay.wet.value = 0.08;
-        this.reverb.wet.value = 0.1;
+        this.pitchNode.delayTime.value = 0.003 + Math.abs(Math.round(normalizedTilt * 4)) * 0.0015;
+        this.vocoderFilter.frequency.value = 1800;
+        this.vocoderFilter.Q.value = 2.2 + Math.abs(normalizedTilt) * 2;
+        this.talkboxFilter.frequency.value = 2000;
+        this.delay.delayTime.value = 0.08;
+        this.effectMix.gain.value = 0.16;
         break;
       case "talkbox":
-        this.pitchShift.pitch = 2;
-        this.autoFilter.wet.value = 0.62;
-        this.feedbackDelay.wet.value = 0.12;
-        this.reverb.wet.value = 0.28;
+        this.pitchNode.delayTime.value = 0.014;
+        this.vocoderFilter.frequency.value = 1200;
+        this.vocoderFilter.Q.value = 5.4;
+        this.talkboxFilter.frequency.value = 1600 + normalizedTilt * 240;
+        this.talkboxFilter.Q.value = 9.5;
+        this.delay.delayTime.value = 0.11;
+        this.effectMix.gain.value = 0.32;
         break;
       case "recording":
-        this.pitchShift.pitch = 0;
-        this.autoFilter.wet.value = 0.2;
-        this.feedbackDelay.wet.value = 0.08;
-        this.reverb.wet.value = 0.12;
+        this.pitchNode.delayTime.value = 0.01;
+        this.vocoderFilter.frequency.value = 1500;
+        this.talkboxFilter.frequency.value = 1700;
+        this.delay.delayTime.value = 0.09;
+        this.effectMix.gain.value = 0.2;
         this.startRecording();
         break;
       default:
-        this.pitchShift.pitch = 0;
-        this.autoFilter.wet.value = 0.12;
-        this.feedbackDelay.wet.value = 0.05;
-        this.reverb.wet.value = 0.08;
+        this.pitchNode.delayTime.value = 0.008;
+        this.vocoderFilter.frequency.value = 1000;
+        this.vocoderFilter.Q.value = 2.2;
+        this.talkboxFilter.frequency.value = 1450;
+        this.talkboxFilter.Q.value = 7;
+        this.delay.delayTime.value = 0.08;
+        this.effectMix.gain.value = 0.1;
     }
 
     if (mode !== "recording") {
@@ -195,12 +218,24 @@ export class AudioEngine {
     this.stopRecording();
     this.meydaAnalyzer?.stop();
     this.inputStream?.getTracks().forEach((track) => track.stop());
-    this.autoFilter?.dispose();
-    this.pitchShift?.dispose();
-    this.feedbackDelay?.dispose();
-    this.reverb?.dispose();
+    this.modulationLfo?.dispose();
     this.workletNode?.disconnect();
     this.source?.disconnect();
     this.context?.close();
+  }
+
+  private createImpulseResponse(context: AudioContext, seconds: number) {
+    const rate = context.sampleRate;
+    const length = rate * seconds;
+    const impulse = context.createBuffer(2, length, rate);
+
+    for (let channel = 0; channel < impulse.numberOfChannels; channel += 1) {
+      const data = impulse.getChannelData(channel);
+      for (let i = 0; i < length; i += 1) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2.4);
+      }
+    }
+
+    return impulse;
   }
 }
