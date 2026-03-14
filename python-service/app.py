@@ -1,51 +1,50 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+import asyncio
+from contextlib import suppress
 
-from models.motion_model import MotionModel
-from models.pose_model import PoseModel
-from models.sequence_model import SequenceModel
-from schemas import InferenceRequest, InferenceResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-app = FastAPI(title="Gesture Motion Service")
+from engine import VocalEngineRuntime
+from schemas import EngineState
 
-pose_model = PoseModel()
-motion_model = MotionModel()
-sequence_model = SequenceModel()
+app = FastAPI(title="Python Vocal Engine")
+runtime = VocalEngineRuntime()
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+@app.get("/state", response_model=EngineState)
+def get_state() -> EngineState:
+    return runtime.state.snapshot()
 
 
-@app.post("/infer", response_model=InferenceResponse)
-def infer(payload: InferenceRequest) -> InferenceResponse:
-    if not payload.frames:
-        return InferenceResponse(
-            gesture="none",
-            confidence=0.0,
-            tilt=0.0,
-            label="No frames provided",
-            movement="still",
-            position={"horizontal": "center", "vertical": "mid"},
-            source="python-live",
-        )
+@app.post("/session/start", response_model=EngineState)
+def start_session() -> EngineState:
+    runtime.start()
+    return runtime.state.snapshot()
 
-    latest_frame = payload.frames[-1]
-    pose = None
-    motion = None
 
-    for step in payload.model_order:
-        if step == "pose":
-            pose = pose_model.predict(latest_frame)
-        elif step == "motion":
-            motion = motion_model.predict(payload.frames)
-        elif step == "sequence":
-            pose = pose or pose_model.predict(latest_frame)
-            motion = motion or motion_model.predict(payload.frames)
-            return sequence_model.predict(pose, motion)
+@app.post("/session/stop", response_model=EngineState)
+def stop_session() -> EngineState:
+    runtime.stop()
+    return runtime.state.snapshot()
 
-    pose = pose or pose_model.predict(latest_frame)
-    motion = motion or motion_model.predict(payload.frames)
-    return sequence_model.predict(pose, motion)
+
+@app.websocket("/ws")
+async def websocket_state(websocket: WebSocket) -> None:
+    await websocket.accept()
+
+    async def sender() -> None:
+        while True:
+            await websocket.send_text(runtime.state.snapshot().model_dump_json())
+            await asyncio.sleep(0.12)
+
+    task = asyncio.create_task(sender())
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task

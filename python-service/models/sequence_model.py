@@ -1,40 +1,47 @@
 from __future__ import annotations
 
-from schemas import InferenceResponse, MotionFeatures, PoseFeatures
+from schemas import GestureSnapshot
 
 
 class SequenceModel:
-    def predict(self, pose: PoseFeatures, motion: MotionFeatures) -> InferenceResponse:
+    def predict(
+        self,
+        openness: float,
+        tilt: float,
+        movement: str,
+        position,
+    ) -> tuple[str, GestureSnapshot]:
         gesture = "none"
         confidence = 0.52
         label = "Transitional gesture"
+        effect = "idle"
 
-        if pose.openness > 0.44:
+        if openness > 0.44:
             gesture = "palm"
             confidence = 0.91
             label = "Palm detected"
-        elif pose.openness < 0.22:
+            effect = "vocoder"
+        elif openness < 0.22:
             gesture = "fist"
             confidence = 0.86
             label = "Fist detected"
-        elif motion.direction in {"up", "down"} and 0.22 <= pose.openness <= 0.34:
+            effect = "autotune"
+        elif 0.22 <= openness <= 0.34 and movement in {"up", "down"}:
             gesture = "two-finger"
             confidence = 0.79
             label = "Recording gesture"
-        elif pose.openness > 0.3 and motion.direction in {"left", "right"}:
+            effect = "recording"
+        elif openness > 0.30 and movement in {"left", "right"}:
             gesture = "love-you"
             confidence = 0.75
             label = "Talkbox sign"
+            effect = "talkbox"
 
-        return InferenceResponse(
+        return effect, GestureSnapshot(
             gesture=gesture,
             confidence=confidence,
-            tilt=pose.tilt,
+            tilt=tilt,
             label=label,
-            movement=motion.direction,
-            position={
-                "horizontal": pose.horizontal,
-                "vertical": pose.vertical,
-            },
-            source="python-live",
+            movement=movement,
+            position=position,
         )

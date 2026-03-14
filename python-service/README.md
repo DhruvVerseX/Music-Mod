@@ -1,14 +1,14 @@
-# Python Gesture Service
+# Python Vocal Engine
 
-This service analyzes hand position and movement in three ordered stages:
+This service owns:
 
-1. `pose_model.py`
-2. `motion_model.py`
-3. `sequence_model.py`
+- microphone capture
+- live output monitoring to speakers / earpiece
+- camera-based hand tracking
+- gesture-to-effect switching
+- websocket state updates for the Next.js dashboard
 
-The frontend posts recent MediaPipe landmarks to `POST /infer`. If the service is offline, the web app falls back to browser-side inference.
-
-## Run
+## Start
 
 ```bash
 python -m venv .venv
@@ -17,4 +17,20 @@ pip install -r requirements.txt
 uvicorn app:app --host 127.0.0.1 --port 8001 --reload
 ```
 
-Set `NEXT_PUBLIC_GESTURE_MODEL_URL=http://127.0.0.1:8001/infer` in the Next.js app if you want to override the default endpoint.
+## Frontend
+
+The web app is UI-only. By default it connects to:
+
+- `http://127.0.0.1:8001/state`
+- `ws://127.0.0.1:8001/ws`
+
+Override with:
+
+- `NEXT_PUBLIC_ENGINE_HTTP_URL`
+- `NEXT_PUBLIC_ENGINE_WS_URL`
+
+## Notes
+
+- Real-time monitoring happens locally in Python, not through the browser.
+- Effects are lightweight approximations tuned for low-latency local use.
+- Use headphones or earpieces to avoid speaker feedback.
