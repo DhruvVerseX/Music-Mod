@@ -43,3 +43,10 @@ class EngineState(BaseModel):
     metrics: AudioMetrics
     errors: list[str]
     backendVersion: str
+
+
+class GestureUpdate(BaseModel):
+    cameraReady: bool
+    effect: EffectType
+    gesture: GestureSnapshot
+    isRecording: bool

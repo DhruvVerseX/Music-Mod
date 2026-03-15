@@ -4,9 +4,13 @@ import os
 import threading
 import time
 from collections import deque
+from pathlib import Path
 
 import cv2
 import mediapipe as mp
+from mediapipe.tasks.python import vision
+from mediapipe.tasks.python.core.base_options import BaseOptions
+from mediapipe.tasks.python.vision.core.vision_task_running_mode import VisionTaskRunningMode
 
 from engine.state import SharedState
 from engine.state import default_gesture
@@ -43,12 +47,10 @@ class GestureTracker:
             self.state.set_error("Python camera capture failed to open. Tried indices 0-4 on DirectShow and default backends.")
             return
 
-        hands = mp.solutions.hands.Hands(
-            static_image_mode=False,
-            max_num_hands=1,
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.6,
-        )
+        hands = self._create_hand_tracker()
+        if hands is None:
+            cap.release()
+            return
 
         with self.state.lock:
             self.state.camera_ready = True
@@ -62,8 +64,10 @@ class GestureTracker:
                     continue
 
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                results = hands.process(rgb)
-                landmarks = results.multi_hand_landmarks[0].landmark if results.multi_hand_landmarks else None
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                timestamp_ms = int(time.monotonic() * 1000)
+                results = hands.detect_for_video(mp_image, timestamp_ms)
+                landmarks = results.hand_landmarks[0] if results.hand_landmarks else None
 
                 if landmarks:
                     openness, tilt, position = self._pose_model.predict(landmarks)
@@ -81,6 +85,8 @@ class GestureTracker:
                         self.state.is_recording = False
 
                 time.sleep(0.01)
+        except Exception as exc:
+            self.state.set_error(f"Camera processing failed: {exc}")
         finally:
             hands.close()
             cap.release()
@@ -129,3 +135,19 @@ class GestureTracker:
         ]
         retained.append(message)
         self.state.errors = retained
+
+    def _create_hand_tracker(self):
+        model_path = Path(__file__).resolve().parent.parent / "models" / "hand_landmarker.task"
+        if not model_path.exists():
+            self.state.set_error(f"MediaPipe hand model missing at {model_path}.")
+            return None
+
+        options = vision.HandLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=str(model_path)),
+            running_mode=VisionTaskRunningMode.VIDEO,
+            num_hands=1,
+            min_hand_detection_confidence=0.7,
+            min_hand_presence_confidence=0.6,
+            min_tracking_confidence=0.6,
+        )
+        return vision.HandLandmarker.create_from_options(options)

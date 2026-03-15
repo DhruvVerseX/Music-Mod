@@ -64,3 +64,10 @@ class SharedState:
     def clear_errors(self) -> None:
         with self.lock:
             self.errors = []
+
+    def apply_browser_gesture(self, camera_ready: bool, effect: str, gesture: GestureSnapshot, is_recording: bool) -> None:
+        with self.lock:
+            self.camera_ready = camera_ready
+            self.effect = effect
+            self.gesture = gesture
+            self.is_recording = is_recording
