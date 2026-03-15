@@ -8,7 +8,7 @@ export const EFFECT_DESCRIPTIONS: Record<AudioEffectMode, string> = {
   vocoder: "Carrier-style robotic coloration controlled by palm angle and movement.",
   autotune: "Quantized pitch correction with fist tilt steering the correction depth.",
   talkbox: "Formant-focused vocal filtering for speech-like synth articulation.",
-  recording: "Processed signal is being captured by the Python engine."
+  recording: "Processed microphone signal is being captured in the browser while the two-finger pose is held."
 };
 
 export const GESTURE_GUIDE = [

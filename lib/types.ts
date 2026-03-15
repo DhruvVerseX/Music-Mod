@@ -25,6 +25,11 @@ export interface AudioMetrics {
   outputLevel: number;
   pitchHz: number;
   latencyMs: number;
+  frequencyData?: number[];
+  availableDevices?: {
+    inputs: MediaDeviceInfo[];
+    outputs: MediaDeviceInfo[];
+  };
 }
 
 export interface EngineState {
@@ -33,6 +38,7 @@ export interface EngineState {
   micReady: boolean;
   outputReady: boolean;
   isRecording: boolean;
+  isMonitoring: boolean;
   effect: AudioEffectMode;
   gesture: GestureSnapshot;
   metrics: AudioMetrics;

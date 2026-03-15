@@ -25,6 +25,11 @@ export function EngineStage() {
   const historyRef = useRef<Array<{ x: number; y: number }>>([]);
   const smoothedLandmarksRef = useRef<Landmark[] | null>(null);
   const missingFramesRef = useRef(0);
+  const recordingHoldFramesRef = useRef(0);
+  const recordingReleaseFramesRef = useRef(0);
+  const hasToggledForCurrentGestureRef = useRef(false);
+  const targetRecordingStateRef = useRef(false);
+  const lastSyncRef = useRef(0);
   const lastSentRef = useRef(0);
   const [hasMounted, setHasMounted] = useState(false);
   const [previewStatus, setPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -41,6 +46,11 @@ export function EngineStage() {
   useEffect(() => {
     setHasMounted(true);
   }, []);
+
+  // Sync the local intent ref with the store (e.g. if user clicks the UI button)
+  useEffect(() => {
+    targetRecordingStateRef.current = engine.isRecording;
+  }, [engine.isRecording]);
 
   useEffect(() => {
     const shouldPreview = engine.status === "connecting" || engine.status === "running";
@@ -221,7 +231,7 @@ export function EngineStage() {
     };
   }, []);
 
-    const buildGesturePayload = (landmarks?: Landmark[]): {
+  const buildGesturePayload = (landmarks?: Landmark[]): {
     cameraReady: boolean;
     effect: EngineState["effect"];
     gesture: EngineState["gesture"];
@@ -229,6 +239,11 @@ export function EngineStage() {
   } => {
     if (!landmarks) {
       historyRef.current = [];
+      recordingHoldFramesRef.current = 0;
+      recordingReleaseFramesRef.current = 0;
+      hasToggledForCurrentGestureRef.current = false;
+      // Don't reset target state here, let it persist
+      // targetRecordingStateRef.current = engine.isRecording;
       setTrackingHud({
         visible: false,
         movement: "still",
@@ -248,7 +263,7 @@ export function EngineStage() {
           movement: "still",
           position: { horizontal: "center", vertical: "mid" }
         },
-        isRecording: false
+        isRecording: targetRecordingStateRef.current
       };
     }
 
@@ -256,6 +271,7 @@ export function EngineStage() {
     historyRef.current = [...historyRef.current.slice(-7), { x: wrist.x, y: wrist.y }];
 
     const openness = estimateOpenness(landmarks);
+    const fingerState = getFingerState(landmarks);
     const tilt = round(((landmarks[5].x + landmarks[17].x) / 2) - wrist.x);
     const { movement, amount } = predictMovement(historyRef.current);
     const position = {
@@ -268,26 +284,45 @@ export function EngineStage() {
     let confidence = 0.54;
     let label = "Hand detected";
 
-    if (openness > 0.44) {
-      effect = "vocoder";
+    if (fingerState.index && fingerState.middle && fingerState.ring && fingerState.pinky && openness > 0.36) {
+      effect = "talkbox";
       gesture = "palm";
-      confidence = 0.91;
-      label = "Palm detected";
-    } else if (openness < 0.22) {
+      confidence = 0.93;
+      label = "Talkbox active";
+    } else if (!fingerState.index && !fingerState.middle && !fingerState.ring && !fingerState.pinky && openness < 0.22) {
       effect = "autotune";
       gesture = "fist";
       confidence = 0.86;
       label = "Fist detected";
-    } else if (0.22 <= openness && openness <= 0.34 && (movement === "up" || movement === "down")) {
+    } else if (fingerState.index && fingerState.middle && !fingerState.ring && !fingerState.pinky) {
       effect = "recording";
       gesture = "two-finger";
-      confidence = 0.79;
-      label = "Recording gesture";
-    } else if (openness > 0.3 && (movement === "left" || movement === "right")) {
-      effect = "talkbox";
+      confidence = fingerState.thumb ? 0.9 : 0.84;
+      label = "Two-finger record";
+    } else if (fingerState.thumb && fingerState.index && !fingerState.middle && !fingerState.ring && fingerState.pinky) {
+      effect = "vocoder";
       gesture = "love-you";
-      confidence = 0.75;
-      label = "Talkbox sign";
+      confidence = 0.88;
+      label = "Vocoder active";
+    }
+
+    const isTwoFinger = gesture === "two-finger";
+
+    if (isTwoFinger) {
+      recordingHoldFramesRef.current += 1;
+      recordingReleaseFramesRef.current = 0;
+      if (recordingHoldFramesRef.current >= 6) { // ~0.7s steady
+        if (!hasToggledForCurrentGestureRef.current) {
+          targetRecordingStateRef.current = !engine.isRecording;
+          hasToggledForCurrentGestureRef.current = true;
+        }
+      }
+    } else {
+      recordingReleaseFramesRef.current += 1;
+      if (recordingReleaseFramesRef.current >= 10) { // Clear reset for next toggle
+        recordingHoldFramesRef.current = 0;
+        hasToggledForCurrentGestureRef.current = false;
+      }
     }
 
     setTrackingHud({
@@ -310,7 +345,7 @@ export function EngineStage() {
         movement,
         position
       },
-      isRecording: effect === "recording"
+      isRecording: targetRecordingStateRef.current
     };
   };
 
@@ -319,22 +354,22 @@ export function EngineStage() {
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.65, delay: 0.1 }}
-      className="dj-panel overflow-hidden p-5"
+      className="dj-panel overflow-hidden p-4"
     >
-      <div className="relative min-h-[420px] rounded-[30px] border border-white/10 bg-[linear-gradient(135deg,#121621_0%,#0b0d13_55%,#17131a_100%)] p-5">
+      <div className="relative flex flex-col rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#121621_0%,#0b0d13_55%,#17131a_100%)] p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[11px] uppercase tracking-[0.34em] text-white/45">Camera Deck</p>
-            <h2 className="mt-2 font-display text-4xl capitalize text-white">{engine.effect}</h2>
+            <h2 className="mt-1 font-display text-3xl capitalize text-white">{engine.effect}</h2>
           </div>
           <div className="rounded-full border border-[#62ffd9]/20 bg-[#62ffd9]/10 px-4 py-2 text-[10px] uppercase tracking-[0.3em] text-[#9dffe9]">
             {engine.gesture.label}
           </div>
         </div>
 
-        <p className="mt-3 max-w-2xl text-sm leading-7 text-white/60">{EFFECT_DESCRIPTIONS[engine.effect]}</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">{EFFECT_DESCRIPTIONS[engine.effect]}</p>
 
-        <div className="mt-7 grid gap-5 xl:grid-cols-[1.28fr_0.72fr]">
+        <div className="mt-4 flex-1">
           <div className="overflow-hidden rounded-[30px] border border-white/10 bg-[#06070b]">
             <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3">
               <p className="text-[11px] uppercase tracking-[0.32em] text-white/45">Video Plate</p>
@@ -342,34 +377,34 @@ export function EngineStage() {
                 {previewStatus === "ready" ? "Tracking" : previewStatus === "loading" ? "Starting" : "Standby"}
               </span>
             </div>
-            <div className="relative aspect-video min-h-[420px] bg-[radial-gradient(circle_at_top,rgba(98,255,217,0.18),transparent_30%),linear-gradient(180deg,#0b111a_0%,#05070c_100%)] xl:min-h-[560px]">
+            <div className="relative aspect-video w-full bg-[radial-gradient(circle_at_top,rgba(98,255,217,0.18),transparent_30%),linear-gradient(180deg,#0b111a_0%,#05070c_100%)]">
               {hasMounted ? (
-                <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
+                <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover -scale-x-100" />
               ) : null}
               {hasMounted ? <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" /> : null}
-              <div className="pointer-events-none absolute left-4 top-4 rounded-[22px] border border-white/10 bg-black/55 px-4 py-3 backdrop-blur">
+              <div className="pointer-events-none absolute left-4 top-4 rounded-[20px] border border-white/10 bg-black/55 px-3 py-2.5 backdrop-blur">
                 <p className="text-[10px] uppercase tracking-[0.28em] text-white/45">Live Tracking</p>
-                <p className="mt-2 text-sm font-semibold text-white">
+                <p className="mt-1.5 text-sm font-semibold text-white">
                   {trackingHud.visible ? trackingHud.movement : "no hand"}
                 </p>
-                <div className="mt-3 h-2 w-36 overflow-hidden rounded-full bg-white/10">
+                <div className="mt-2 h-2 w-28 overflow-hidden rounded-full bg-white/10">
                   <div
                     className="h-full rounded-full bg-[linear-gradient(90deg,#7ef7cf,#ff8f5a)] transition-[width] duration-100"
                     style={{ width: `${Math.max(6, trackingHud.movementAmount * 100)}%` }}
                   />
                 </div>
-                <p className="mt-2 text-xs text-white/60">
+                <p className="mt-1.5 text-[11px] text-white/60">
                   speed {Math.round(trackingHud.movementAmount * 100)} | x {Math.round(trackingHud.x * 100)} | y {Math.round(trackingHud.y * 100)}
                 </p>
               </div>
-              <div className="pointer-events-none absolute bottom-4 left-4 right-4 flex items-center justify-between rounded-[22px] border border-white/10 bg-black/45 px-4 py-3 backdrop-blur">
+              <div className="pointer-events-none absolute bottom-4 left-4 right-4 flex items-center justify-between rounded-[20px] border border-white/10 bg-black/45 px-4 py-2.5 backdrop-blur">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.28em] text-white/45">Deck Cue</p>
-                  <p className="mt-1 text-sm font-semibold uppercase text-white">{engine.gesture.gesture}</p>
+                  <p className="mt-1 text-xs font-semibold uppercase text-white">{engine.gesture.gesture}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] uppercase tracking-[0.28em] text-white/45">Confidence</p>
-                  <p className="mt-1 text-sm font-semibold uppercase text-white">{Math.round(engine.gesture.confidence * 100)}%</p>
+                  <p className="mt-1 text-xs font-semibold uppercase text-white">{Math.round(engine.gesture.confidence * 100)}%</p>
                 </div>
               </div>
               {previewStatus !== "ready" ? (
@@ -386,23 +421,16 @@ export function EngineStage() {
               ) : null}
             </div>
           </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-            <EngineCard label="Gesture" value={engine.gesture.gesture} />
-            <EngineCard label="Movement" value={engine.gesture.movement} />
-            <EngineCard label="Hand Zone" value={`${engine.gesture.position.horizontal}-${engine.gesture.position.vertical}`} />
-            <EngineCard label="Confidence" value={`${Math.round(engine.gesture.confidence * 100)}%`} />
-          </div>
         </div>
 
-        <div className="mt-8 rounded-[28px] border border-white/10 bg-[#0c0f16] p-5">
+        <div className="mt-4 rounded-[24px] border border-white/10 bg-[#0c0f16] p-4">
           <div className="flex items-center justify-between gap-4">
             <p className="text-[11px] uppercase tracking-[0.32em] text-white/45">Signal Chain</p>
             <span className="text-[10px] uppercase tracking-[0.28em] text-[#ffb06b]">Mic to FX Bus to Master</span>
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-5">
+          <div className="mt-3 grid gap-2 md:grid-cols-5">
             {["Mic", "Pitch", engine.effect, "Spatial FX", "Output"].map((item) => (
-              <div key={item} className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-4 text-center text-sm uppercase tracking-[0.18em] text-white">
+              <div key={item} className="rounded-[18px] border border-white/10 bg-white/[0.04] px-3 py-3 text-center text-xs uppercase tracking-[0.16em] text-white">
                 {item}
               </div>
             ))}
@@ -431,6 +459,21 @@ function estimateOpenness(landmarks: Landmark[]) {
   });
 
   return round(distances.reduce((sum, value) => sum + value, 0) / distances.length);
+}
+
+function getFingerState(landmarks: Landmark[]) {
+  const isRaised = (tipIndex: number, pipIndex: number, mcpIndex: number) =>
+    landmarks[tipIndex].y < landmarks[pipIndex].y && landmarks[pipIndex].y < landmarks[mcpIndex].y;
+
+  const thumbSpread = Math.abs(landmarks[4].x - landmarks[2].x);
+
+  return {
+    thumb: thumbSpread > 0.09,
+    index: isRaised(8, 6, 5),
+    middle: isRaised(12, 10, 9),
+    ring: isRaised(16, 14, 13),
+    pinky: isRaised(20, 18, 17)
+  };
 }
 
 function predictMovement(history: Array<{ x: number; y: number }>): {
@@ -518,23 +561,44 @@ function drawHandOverlay(canvas: HTMLCanvasElement | null, video: HTMLVideoEleme
     return;
   }
 
-  const width = video.videoWidth || video.clientWidth;
-  const height = video.videoHeight || video.clientHeight;
-  if (!width || !height) {
+  const videoWidth = video.videoWidth;
+  const videoHeight = video.videoHeight;
+  const canvasWidth = canvas.clientWidth;
+  const canvasHeight = canvas.clientHeight;
+
+  if (!videoWidth || !videoHeight || !canvasWidth || !canvasHeight) {
     return;
   }
 
-  if (canvas.width !== width) {
-    canvas.width = width;
+  if (canvas.width !== canvasWidth) {
+    canvas.width = canvasWidth;
   }
-  if (canvas.height !== height) {
-    canvas.height = height;
+  if (canvas.height !== canvasHeight) {
+    canvas.height = canvasHeight;
   }
 
-  context.clearRect(0, 0, width, height);
+  context.clearRect(0, 0, canvasWidth, canvasHeight);
   if (!landmarks?.length) {
     return;
   }
+
+  // Calculate scaling and offsets for 'object-cover' mapping
+  const videoAspect = videoWidth / videoHeight;
+  const canvasAspect = canvasWidth / canvasHeight;
+
+  let scale, offsetX = 0, offsetY = 0;
+  if (videoAspect > canvasAspect) {
+    // Video is wider than canvas (sides cropped)
+    scale = canvasHeight / videoHeight;
+    offsetX = (videoWidth * scale - canvasWidth) / 2;
+  } else {
+    // Video is taller than canvas (top/bottom cropped)
+    scale = canvasWidth / videoWidth;
+    offsetY = (videoHeight * scale - canvasHeight) / 2;
+  }
+
+  const mapX = (x: number) => x * videoWidth * scale - offsetX;
+  const mapY = (y: number) => y * videoHeight * scale - offsetY;
 
   context.lineWidth = 3;
   context.strokeStyle = "#7ef7cf";
@@ -546,14 +610,14 @@ function drawHandOverlay(canvas: HTMLCanvasElement | null, video: HTMLVideoEleme
     const from = landmarks[fromIndex];
     const to = landmarks[toIndex];
     context.beginPath();
-    context.moveTo(from.x * width, from.y * height);
-    context.lineTo(to.x * width, to.y * height);
+    context.moveTo(mapX(from.x), mapY(from.y));
+    context.lineTo(mapX(to.x), mapY(to.y));
     context.stroke();
   }
 
   for (const landmark of landmarks) {
     context.beginPath();
-    context.arc(landmark.x * width, landmark.y * height, 4, 0, Math.PI * 2);
+    context.arc(mapX(landmark.x), mapY(landmark.y), 4, 0, Math.PI * 2);
     context.fill();
   }
 }

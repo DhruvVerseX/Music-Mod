@@ -43,37 +43,37 @@ export function ControlPanel() {
   };
 
   return (
-    <div className="flex flex-col gap-4 xl:items-end">
-      <div className="flex flex-wrap gap-3">
+    <div className="flex flex-col gap-3 text-right">
+      <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.3em]">
         <button
           type="button"
-          disabled={isStarting}
           onClick={() => void handleAction("/session/start")}
-          className="rounded-full border border-[#62ffd9]/25 bg-[linear-gradient(180deg,rgba(98,255,217,0.22),rgba(98,255,217,0.08))] px-6 py-3 text-sm font-medium uppercase tracking-[0.18em] text-[#a7ffee] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isStarting}
+          className="rounded-full border border-white/20 bg-gradient-to-br from-[#5fffe3]/40 via-[#54d4ff]/30 to-[#0b2c49]/30 px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-[#e4ffe8] transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isStarting ? "Arming..." : "Start Deck"}
         </button>
         <button
           type="button"
-          disabled={isStopping}
           onClick={() => void handleAction("/session/stop")}
-          className="rounded-full border border-white/12 bg-white/5 px-6 py-3 text-sm font-medium uppercase tracking-[0.18em] text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isStopping}
+          className="rounded-full border border-white/20 bg-white/5 px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-white transition hover:border-white/40 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isStopping ? "Cutting..." : "Stop Deck"}
         </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.3em] text-white/45">Engine</p>
-          <p className="mt-2 text-sm font-semibold uppercase text-white">{engine.backendVersion}</p>
+      <div className="grid grid-cols-2 gap-2 text-[10px] uppercase tracking-[0.28em]">
+        <div className="rounded-[16px] border border-white/10 bg-white/5 px-3 py-2 text-left text-white/80">
+          <p className="text-[9px] text-white/60">Engine</p>
+          <p className="mt-1 text-sm font-semibold uppercase text-white">{engine.backendVersion}</p>
         </div>
         <motion.div
-          animate={{ opacity: engine.status === "running" ? 1 : 0.8 }}
-          className="rounded-[22px] border border-[#ff7a18]/20 bg-[linear-gradient(180deg,rgba(255,122,24,0.14),rgba(255,122,24,0.06))] px-4 py-3"
+          animate={{ opacity: engine.status === "running" ? 1 : 0.65 }}
+          className="rounded-[16px] border border-[#ff5a1e]/40 bg-[linear-gradient(180deg,rgba(255,90,30,0.25),rgba(255,90,30,0.05))] px-3 py-2 text-left text-white"
         >
-          <p className="text-[10px] uppercase tracking-[0.3em] text-[#ffb06b]">Session</p>
-          <p className="mt-2 text-sm font-semibold uppercase text-white">{engine.status}</p>
+          <p className="text-[9px] text-[#ffe7cf]">Session</p>
+          <p className="mt-1 text-sm font-semibold uppercase">{engine.status}</p>
         </motion.div>
       </div>
     </div>

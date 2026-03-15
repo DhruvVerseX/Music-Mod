@@ -9,6 +9,7 @@ const initialState: EngineState = {
   micReady: false,
   outputReady: false,
   isRecording: false,
+  isMonitoring: true,
   effect: "idle",
   gesture: {
     gesture: "none",

@@ -20,6 +20,7 @@ export function useEngineSession() {
 export async function postEngineAction(path: string) {
   if (path === "/session/start") {
     await browserAudioEngine.start();
+    await browserAudioEngine.refreshDevices();
     useAppStore.getState().mergeEngine({
       status: "running",
       micReady: true,
@@ -81,10 +82,52 @@ export async function postGestureUpdate(payload: {
   isRecording: boolean;
 }) {
   browserAudioEngine.setEffect(payload.effect);
+  let isRecording = false;
+  let recordingError = "";
+
+  try {
+    isRecording = await browserAudioEngine.syncRecording(payload.isRecording);
+  } catch (error) {
+    recordingError = error instanceof Error ? error.message : "Voice recording failed in the browser.";
+    useAppStore.getState().mergeEngine({
+      isRecording: false,
+      errors: [recordingError]
+    });
+  }
+
   useAppStore.getState().mergeEngine({
     cameraReady: payload.cameraReady,
     effect: payload.effect,
     gesture: payload.gesture,
-    isRecording: payload.isRecording
+    isRecording,
+    errors: recordingError
+      ? [recordingError]
+      : [
+          isRecording
+            ? "Two-finger gesture detected. Recording the processed microphone signal."
+            : "Browser audio engine is running. Move your hand to switch effects in real time."
+        ]
+  });
+}
+
+export async function setBrowserRecording(shouldRecord: boolean) {
+  let isRecording = false;
+  let recordingError = "";
+
+  try {
+    isRecording = await browserAudioEngine.syncRecording(shouldRecord);
+  } catch (error) {
+    recordingError = error instanceof Error ? error.message : "Voice recording failed in the browser.";
+  }
+
+  useAppStore.getState().mergeEngine({
+    isRecording,
+    errors: recordingError
+      ? [recordingError]
+      : [
+          isRecording
+            ? "Recording in progress. You are hearing the live processed mic in real time."
+            : "Live monitor is active. Speak into the mic and listen on your output device."
+        ]
   });
 }
