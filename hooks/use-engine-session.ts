@@ -76,7 +76,13 @@ export function useEngineSession() {
 }
 
 export async function postEngineAction(path: string) {
-  await fetch(`${ENGINE_HTTP_URL}${path}`, {
+  const response = await fetch(`${ENGINE_HTTP_URL}${path}`, {
     method: "POST"
+  }).catch(() => {
+    throw new Error("Python engine is not reachable at the configured URL.");
   });
+
+  if (!response.ok) {
+    throw new Error(`Python engine returned ${response.status}.`);
+  }
 }

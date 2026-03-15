@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from threading import Lock
+from threading import RLock
 
 from schemas import AudioMetrics, EngineState, GestureSnapshot, HandPosition
 
@@ -38,7 +38,7 @@ class SharedState:
     metrics: AudioMetrics = field(default_factory=default_metrics)
     errors: list[str] = field(default_factory=lambda: ["Engine idle. Start session from the dashboard."])
     backend_version: str = "python-engine-0.2.0"
-    lock: Lock = field(default_factory=Lock)
+    lock: RLock = field(default_factory=RLock)
 
     def snapshot(self) -> EngineState:
         with self.lock:

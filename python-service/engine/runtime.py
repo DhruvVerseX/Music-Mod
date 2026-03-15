@@ -12,9 +12,9 @@ class VocalEngineRuntime:
         self.gesture = GestureTracker(self.state)
 
     def start(self) -> None:
+        self.state.clear_errors()
         with self.state.lock:
             self.state.status = "connecting"
-            self.state.clear_errors()
 
         try:
             self.audio.start()
